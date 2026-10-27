@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Memory of Places — Point Cloud v5.5</title>
+<style>
+  :root{
+    --bg:#090909; --panel:rgba(18,18,18,.92); --text:#f4f4f4; --muted:#8f8f8f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+  #app{position:relative;width:100vw;height:100vh}
+  #stage{position:absolute;inset:0}
+  canvas{display:block}
+  #drop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity .25s}
+  .dropCard{
+    width:min(540px,calc(100vw - 40px));padding:32px;border:1px solid #2b2b2b;border-radius:24px;
+    background:rgba(11,11,11,.78);backdrop-filter:blur(20px);text-align:center;
+  }
+  .dropCard h1{margin:0 0 12px;font-size:25px;font-weight:560;letter-spacing:-.03em}
+  .dropCard p{margin:0 0 20px;font-size:14px;line-height:1.55;color:#999}
+  button,.fileLabel,select,input{font:inherit}
+  button,.fileLabel{
+    border:1px solid #343434;background:#181818;color:#eee;border-radius:10px;min-height:38px;
+    padding:9px 12px;cursor:pointer;transition:.18s
+  }
+  button:hover,.fileLabel:hover{background:#222}
+  .primary{background:#eee !important;color:#111 !important;border-color:#eee !important}
+  .ghost{background:#121212;color:#bbb}
+  .fileLabel input{display:none}
+  .rowBtns{display:flex;gap:8px;flex-wrap:wrap}
+  .rowBtns>*{flex:1}
+  #cameraWrap{
+    position:absolute;left:18px;top:18px;width:220px;aspect-ratio:4/3;overflow:hidden;border-radius:14px;
+    border:2px solid #4a1f1f;background:#111;display:none;box-shadow:0 0 0 1px rgba(0,0,0,.25) inset;transition:border-color .18s, box-shadow .18s, border-width .18s;
+  }
+  #cameraWrap.detected{border-color:#1f7a36;box-shadow:0 0 0 1px rgba(53,196,93,.18) inset, 0 0 18px rgba(53,196,93,.18);}
+  #cameraWrap.missing{border-color:#8b2d2d;box-shadow:0 0 0 1px rgba(255,74,74,.12) inset, 0 0 18px rgba(255,74,74,.12);}
+  #camera{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:.84}
+  .statusDot{position:absolute;left:9px;bottom:9px;width:7px;height:7px;border-radius:50%;background:#666}
+  .statusDot.on{background:#ddd;box-shadow:0 0 10px #fff}
+  #cameraOverlay{
+    position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.08);
+    border-radius:10px;padding:6px 8px;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#ddd;text-align:right;
+  }
+  #panel{
+    position:absolute;top:16px;right:16px;width:395px;max-height:calc(100vh - 32px);overflow:auto;
+    border:1px solid #252525;border-radius:18px;background:var(--panel);backdrop-filter:blur(22px);
+    box-shadow:0 18px 60px rgba(0,0,0,.3);padding:15px;scrollbar-width:thin;scrollbar-color:#333 transparent;
+  }
+  #panel.hidden{display:none}
+  #panelToggle{
+    position:absolute;right:16px;top:16px;display:none;padding:9px 11px;background:rgba(18,18,18,.8);backdrop-filter:blur(12px)
+  }
+  .panelTop{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+  .panelTitle{font-size:14px;font-weight:650}
+  .mini{font-size:11px;color:#888}
+  .section{border-top:1px solid #292929;padding-top:13px;margin-top:13px}
+  .section:first-of-type{border-top:0;margin-top:0;padding-top:0}
+  .sectionTitle{font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.1em;margin-bottom:11px}
+  .ctrl{margin:10px 0}
+  .ctrlHead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:6px}
+  .ctrl label{font-size:12px;color:#d6d6d6}
+  .val{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#888}
+  input[type=range]{width:100%;height:4px;appearance:none;background:#303030;border-radius:20px;outline:none;padding:0}
+  input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:#eee;border:0}
+  input[type=checkbox]{accent-color:#ddd}
+  select{width:100%;background:#171717;border:1px solid #303030;color:#eee;border-radius:9px;padding:8px}
+  .checkrow{display:flex;align-items:center;justify-content:space-between;margin:9px 0;font-size:12px;color:#d5d5d5}
+  .softBox{border:1px solid #292929;border-radius:12px;padding:10px;background:rgba(255,255,255,.02);margin-top:8px}
+  .tinyNote{font-size:11px;color:#7e7e7e;line-height:1.45;margin-top:6px}
+  .slotList{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px}
+  .slotRow{
+    border:1px solid #2a2a2a;border-radius:10px;padding:8px 10px;background:rgba(255,255,255,.02);
+    display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11px;color:#a9a9a9;cursor:pointer;
+  }
+  .slotRow.active{border-color:#585858;background:rgba(255,255,255,.05);color:#efefef}
+  .slotRow strong{display:inline-block;min-width:18px;color:#ddd}
+  .slotNames{display:flex;flex-direction:column;gap:2px;overflow:hidden}
+  .slotNames span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}
+  #leftActions{position:absolute;left:18px;bottom:88px;display:flex;gap:8px;z-index:4}
+  #hud{
+    position:absolute;left:18px;bottom:17px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none
+  }
+  .hudCard{
+    background:rgba(12,12,12,.62);backdrop-filter:blur(16px);border:1px solid #242424;border-radius:13px;
+    padding:10px 12px;min-width:132px;
+  }
+  .hudLabel{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#777;margin-bottom:3px}
+  .hudValue{font-size:17px;font-weight:540;letter-spacing:-.03em}
+  .hint{
+    position:absolute;left:50%;bottom:20px;transform:translateX(-50%);font-size:11px;color:#676767;text-align:center;
+    pointer-events:none;transition:opacity .5s
+  }
+  .presetGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .hidden-ui{display:none !important}
+  @media(max-width:700px){
+    #panel{top:auto;bottom:10px;right:10px;left:10px;width:auto;max-height:54vh}
+    #cameraWrap{width:132px}
+    #hud{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"></div>
+  <audio id="bgAudio" loop preload="auto"></audio>
+
+  <div id="drop">
+    <div class="dropCard">
+      <h1>Memory of Places</h1>
+      <p>Upload up to 10 images and 10 audio files, then switch between paired memory slots with keys 1–9 and 0. Use body movement, gesture, and mic volume to dissolve the scene.</p>
+      <div class="rowBtns">
+        <label class="fileLabel primary">Upload image to slot<input id="imageInput" type="file" accept="image/*"></label>
+        <label class="fileLabel">Upload audio to slot<input id="audioFileInput" type="file" accept="audio/*"></label>
+      </div>
+      <div class="rowBtns" style="margin-top:8px">
+        <button id="demoBtn" type="button">Use demo</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cameraWrap">
+    <video id="camera" playsinline muted></video>
+    <div id="cameraOverlay">p 0.000 → 0%<br>a 0.000 → 0%<br>targets 0</div>
+    <div id="statusDot" class="statusDot"></div>
+  </div>
+
+  <div id="leftActions">
+    <button id="trackingBtn" type="button">Enable tracking</button>
+  </div>
+
+  <button id="panelToggle" type="button">Controls</button>
+
+  <aside id="panel" class="hidden">
+    <div class="panelTop">
+      <div><div class="panelTitle">Memory controls</div><div id="trackStatus" class="mini">Tracking off</div></div>
+      <button id="hidePanel" type="button">×</button>
+    </div>
+
+    <div class="section">
+      <div class="rowBtns">
+        <label class="fileLabel">Upload image to selected slot<input id="replaceImagesInput" type="file" accept="image/*"></label>
+        <label class="fileLabel">Upload audio to selected slot<input id="replaceAudioInput" type="file" accept="audio/*"></label>
+      </div>
+      <div class="rowBtns" style="margin-top:8px">
+        <button id="micBtn" type="button">Enable mic</button>
+      </div>
+      <div class="ctrl" style="margin-top:8px">
+        <div class="ctrlHead"><label>Subject tracking method</label></div>
+        <select id="trackingTarget">
+          <option value="person" selected>Person / body tracking</option>
+          <option value="head">Face / head tracking</option>
+        </select>
+      </div>
+      <div class="rowBtns" style="margin-top:8px">
+        <button id="calibrateBtn" type="button">Calibrate home</button>
+        <button id="resetBtn" type="button">Reset live</button>
+      </div>
+      <div class="rowBtns" style="margin-top:8px">
+        <button id="saveDefaultsBtn" type="button">Save</button>
+        <button id="clearDefaultsBtn" type="button" class="ghost">Clear saved</button>
+      </div>
+      <div class="tinyNote">Click a slot row to select it. Keyboard: 1–9 and 0 switch slots, * hides all UI, F toggles fullscreen.</div>
+      <div id="slotList" class="slotList"></div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Primary input</div>
+      <div class="ctrl">
+        <div class="ctrlHead"><label>What controls memory</label></div>
+        <select id="inputMode">
+          <option value="headDistance">Subject distance from camera</option>
+          <option value="headX">Subject horizontal position</option>
+          <option value="headY">Subject vertical position</option>
+          <option value="pinch">Thumb–index pinch distance</option>
+          <option value="handX">Hand horizontal position</option>
+          <option value="handY">Hand vertical position</option>
+          <option value="openness">Hand openness, fist → palm</option>
+          <option value="handTilt">Hand rotation / tilt</option>
+          <option value="handMotion">Hand movement speed</option>
+          <option value="mouseX">Mouse horizontal position</option>
+          <option value="mouseY">Mouse vertical position</option>
+          <option value="manual">Manual memory control</option>
+          <option value="auto">Automatic breathing motion</option>
+        </select>
+      </div>
+      <div class="ctrl"><div class="ctrlHead"><label>Manual primary</label><span class="val" id="manualVal"></span></div><input id="manual" type="range" min="-10" max="10" step=".001" value="0"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Input smoothing</label><span class="val" id="smoothVal"></span></div><input id="smooth" type="range" min="0" max=".98" step=".01" value=".90"></div>
+
+      <div class="softBox">
+        <div class="ctrl"><div class="ctrlHead"><label>Shared range start</label><span class="val" id="rangeStartVal"></span></div><input id="rangeStart" type="range" min="-30" max="30" step=".001" value="-1.0"></div>
+        <div class="ctrl"><div class="ctrlHead"><label>Shared range end</label><span class="val" id="rangeEndVal"></span></div><input id="rangeEnd" type="range" min="-30" max="30" step=".001" value="1.0"></div>
+        <div class="rowBtns" style="margin-top:8px">
+          <button id="captureStartBtn" type="button">Capture start</button>
+          <button id="captureEndBtn" type="button">Capture end</button>
+        </div>
+        <div class="tinyNote">This same range is used for both image interaction and mic-audio input mapping.</div>
+      </div>
+
+      <div class="softBox">
+        <div class="ctrl"><div class="ctrlHead"><label>Distance sensitivity</label><span class="val" id="distanceGainVal"></span></div><input id="distanceGain" type="range" min="1" max="30" step=".1" value="8"></div>
+        <div class="ctrl"><div class="ctrlHead"><label>Distance response curve</label><span class="val" id="distanceCurveVal"></span></div><input id="distanceCurve" type="range" min=".35" max="2.5" step=".01" value="1.0"></div>
+        <div class="ctrl"><div class="ctrlHead"><label>Distance dead zone</label><span class="val" id="distanceDeadzoneVal"></span></div><input id="distanceDeadzone" type="range" min="0" max=".5" step=".005" value="0"></div>
+        <div class="tinyNote">Use these only for Subject distance from camera. Sensitivity controls overall distance strength. Curve changes how quickly the animation responds near and far. Dead zone ignores tiny movement around the calibrated home distance.</div>
+      </div>
+
+      <div class="checkrow"><label for="invert">Invert primary mapping</label><input id="invert" type="checkbox"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Audio output level</label><span class="val" id="audioOutVal"></span></div><input id="audioOut" type="range" min="0" max="1" step=".01" value=".8"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Audio filter reactivity</label><span class="val" id="audioReactVal"></span></div><input id="audioReact" type="range" min="0" max="2" step=".01" value="1.0"></div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Point cloud</div>
+      <div class="ctrl"><div class="ctrlHead"><label>Point density</label><span class="val" id="densityVal"></span></div><input id="density" type="range" min="240" max="1200" step="8" value="520"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Trace amount</label><span class="val" id="traceAmountVal"></span></div><input id="traceAmount" type="range" min="0" max="1" step=".01" value=".35"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Point size</label><span class="val" id="sizeVal"></span></div><input id="pointSize" type="range" min=".2" max="5" step=".1" value="1.2"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Image depth</label><span class="val" id="depthVal"></span></div><input id="depth" type="range" min="0" max="2.8" step=".02" value=".55"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Brightness threshold</label><span class="val" id="thresholdVal"></span></div><input id="threshold" type="range" min="0" max=".8" step=".01" value=".03"></div>
+      <div class="checkrow"><label for="grayscale">Monochrome memory</label><input id="grayscale" type="checkbox"></div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Forgetting behaviour</div>
+      <div class="ctrl"><div class="ctrlHead"><label>Separation</label><span class="val" id="spreadVal"></span></div><input id="spread" type="range" min="0" max="12" step=".05" value="3.5"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Random drift</label><span class="val" id="noiseVal"></span></div><input id="noise" type="range" min="0" max="8" step=".05" value="1.4"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Depth collapse</label><span class="val" id="zSpreadVal"></span></div><input id="zSpread" type="range" min="0" max="10" step=".05" value="2.4"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Point disappearance</label><span class="val" id="fadeVal"></span></div><input id="fade" type="range" min="0" max="1" step=".01" value=".32"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Memory turbulence</label><span class="val" id="turbulenceVal"></span></div><input id="turbulence" type="range" min="0" max="2.5" step=".01" value=".22"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Edge erosion</label><span class="val" id="erosionVal"></span></div><input id="erosion" type="range" min="0" max="1" step=".01" value=".18"></div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Post effects</div>
+      <div class="checkrow"><label for="postEnabled">Enable all post effects</label><input id="postEnabled" type="checkbox" checked></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Bloom / glow</label><span class="val" id="bloomStrengthVal"></span></div><input id="bloomStrength" type="range" min="0" max="3" step=".01" value=".95"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Bloom radius</label><span class="val" id="bloomRadiusVal"></span></div><input id="bloomRadius" type="range" min="0" max="1" step=".01" value=".35"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Bloom threshold</label><span class="val" id="bloomThresholdVal"></span></div><input id="bloomThreshold" type="range" min="0" max="1" step=".01" value=".08"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Chromatic aberration</label><span class="val" id="rgbShiftVal"></span></div><input id="rgbShift" type="range" min="0" max=".01" step=".0001" value=".0018"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Gloom / vignette</label><span class="val" id="gloomVal"></span></div><input id="gloom" type="range" min="0" max="1" step=".01" value=".25"></div>
+    </div>
+
+    <div class="section">
+      <div class="sectionTitle">Space + motion</div>
+      <div class="ctrl"><div class="ctrlHead"><label>Perspective</label><span class="val" id="perspectiveVal"></span></div><input id="perspective" type="range" min="25" max="100" step="1" value="52"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Base scale</label><span class="val" id="scaleVal"></span></div><input id="scale" type="range" min=".4" max="2.4" step=".01" value="1"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Mouse parallax</label><span class="val" id="parallaxVal"></span></div><input id="parallax" type="range" min="0" max="1.5" step=".01" value=".20"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Orbit speed</label><span class="val" id="orbitSpeedVal"></span></div><input id="orbitSpeed" type="range" min=".05" max="1.2" step=".01" value=".24"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Orbit horizontal range</label><span class="val" id="orbitXVal"></span></div><input id="orbitX" type="range" min="0" max=".75" step=".01" value=".18"></div>
+      <div class="ctrl"><div class="ctrlHead"><label>Orbit vertical range</label><span class="val" id="orbitYVal"></span></div><input id="orbitY" type="range" min="0" max=".55" step=".01" value=".11"></div>
+      <div class="checkrow"><label for="autoOrbit">Smooth auto orbit</label><input id="autoOrbit" type="checkbox" checked></div>
+      <div class="checkrow"><label for="targetOrbit">Smooth target tracking / soft orbit</label><input id="targetOrbit" type="checkbox"></div>
+    </div>
+  </aside>
+
+  <div id="hud">
+    <div class="hudCard"><div class="hudLabel">Slot</div><div id="slotReadout" class="hudValue">1</div></div>
+    <div class="hudCard"><div class="hudLabel">Combined loss</div><div id="lossReadout" class="hudValue">0%</div></div>
+    <div class="hudCard"><div class="hudLabel">Primary raw → mapped</div><div id="primaryReadout" class="hudValue">—</div></div>
+    <div class="hudCard"><div class="hudLabel">Mic raw → mapped</div><div id="audioReadout" class="hudValue">—</div></div>
+    <div class="hudCard"><div class="hudLabel">Primary input</div><div id="inputReadout" class="hudValue">manual</div></div>
+  </div>
+
+  <div id="hint" class="hint">1–9 and 0 change slot, * hides UI, F fullscreen. Save stores params and all image / audio slots for automatic preload next time.</div>
+</div>
+
+<script type="module">
+(async()=>{
+  const $ = id => document.getElementById(id);
+
+  const drop=$('drop'), stage=$('stage'), panel=$('panel'), panelToggle=$('panelToggle');
+  const video=$('camera'), cameraWrap=$('cameraWrap'), statusDot=$('statusDot'), cameraOverlay=$('cameraOverlay');
+  const trackStatus=$('trackStatus'), lossReadout=$('lossReadout'), primaryReadout=$('primaryReadout'), audioReadout=$('audioReadout'), inputReadout=$('inputReadout'), hint=$('hint'), slotReadout=$('slotReadout');
+  const bgAudio=$('bgAudio'), slotList=$('slotList');
+
+  let THREE, OrbitControls, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, RGBShiftShader, Vector2;
+  let FilesetResolver, FaceLandmarker, HandLandmarker, PoseLandmarker;
+
+  try{
+    THREE=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/+esm');
+    ({OrbitControls}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js/+esm'));
+    ({EffectComposer}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/EffectComposer.js/+esm'));
+    ({RenderPass}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/RenderPass.js/+esm'));
+    ({UnrealBloomPass}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/UnrealBloomPass.js/+esm'));
+    ({ShaderPass}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/ShaderPass.js/+esm'));
+    ({RGBShiftShader}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/shaders/RGBShiftShader.js/+esm'));
+    ({Vector2}=THREE);
+    ({FilesetResolver, FaceLandmarker, HandLandmarker, PoseLandmarker}=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm'));
+  }catch(err){
+    drop.innerHTML='<div class="dropCard"><h1>Could not load dependencies</h1><p>This file needs an internet connection for Three.js, postprocessing, and MediaPipe. Open it from localhost or another local web server if possible.</p></div>';
+    return;
+  }
+
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.setClearColor(0x090909,1);
+  stage.appendChild(renderer.domElement);
+
+  const scene=new THREE.Scene();
+  const root=new THREE.Group();
+  scene.add(root);
+
+  const camera3d=new THREE.PerspectiveCamera(52,innerWidth/innerHeight,.01,100);
+  camera3d.position.set(0,0,7.7);
+
+  const controls=new OrbitControls(camera3d,renderer.domElement);
+  controls.enableDamping=true;
+  controls.dampingFactor=.06;
+  controls.enablePan=false;
+  controls.minDistance=2.5;
+  controls.maxDistance=20;
+  controls.target.set(0,0,0);
+
+  const composer=new EffectComposer(renderer);
+  const renderPass=new RenderPass(scene,camera3d);
+  composer.addPass(renderPass);
+
+  const bloomPass=new UnrealBloomPass(new Vector2(innerWidth,innerHeight),0.95,0.35,0.08);
+  composer.addPass(bloomPass);
+
+  const rgbPass=new ShaderPass(RGBShiftShader);
+  rgbPass.uniforms['amount'].value=0.0018;
+  composer.addPass(rgbPass);
+
+  const GloomShader={
+    uniforms:{tDiffuse:{value:null}, amount:{value:0.25}},
+    vertexShader:`varying vec2 vUv; void main(){vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`
+      uniform sampler2D tDiffuse; uniform float amount; varying vec2 vUv;
+      void main(){
+        vec4 col=texture2D(tDiffuse,vUv);
+        float d=distance(vUv,vec2(0.5));
+        float vig=smoothstep(0.15,0.85,d);
+        col.rgb*=mix(1.0,1.0-amount,vig);
+        float l=dot(col.rgb,vec3(0.2126,0.7152,0.0722));
+        col.rgb=mix(col.rgb,vec3(l),amount*0.28);
+        gl_FragColor=col;
+      }`
+  };
+  const gloomPass=new ShaderPass(GloomShader);
+  composer.addPass(gloomPass);
+
+  let points=null, geometry=null, material=null;
+  let tracePoints=null, traceGeometry=null, traceMaterial=null;
+  let basePositions=null, randomDirs=null, randomPhase=null, edgeFactor=null, baseColors=null;
+  let tracePositions=null, traceAlphas=null;
+  let sourceImage=null;
+
+  const sliderIds=[
+    'manual','smooth','rangeStart','rangeEnd','distanceGain','distanceCurve','distanceDeadzone','audioOut','audioReact',
+    'density','traceAmount','pointSize','depth','threshold','spread','noise','zSpread','fade','turbulence','erosion',
+    'bloomStrength','bloomRadius','bloomThreshold','rgbShift','gloom',
+    'perspective','scale','parallax','orbitSpeed','orbitX','orbitY'
+  ];
+  const el=Object.fromEntries(sliderIds.map(id=>[id,$(id)]));
+  const inputMode=$('inputMode');
+  const trackingTarget=$('trackingTarget');
+  const grayscale=$('grayscale'), invert=$('invert'), autoOrbit=$('autoOrbit'), targetOrbit=$('targetOrbit'), postEnabled=$('postEnabled');
+
+  const settingsKey='memoryOfPlacesSettingsV5';
+  const DB_NAME='memoryOfPlacesDBV5';
+  const DB_VERSION=1;
+
+  const metrics={headDistance:null,headX:null,headY:null,personDistance:null,personX:null,personY:null,handX:null,handY:null,pinch:null,openness:null,handTilt:null,handMotion:null};
+  let homeHeadDistance=null;
+  let primaryRaw=0, primaryMapped=0, micRaw=0, micMapped=0, combinedTarget=0, memoryLoss=0;
+  let detectedTargetCount=0, targetDetected=false;
+  let targetMissingProgress=0;
+  let lastAnimateTime=0;
+  let mouseX=.5, mouseY=.5;
+  let softTargetX=0, softTargetY=0;
+
+  let trackingStream=null, faceLandmarker=null, handLandmarker=null, poseLandmarker=null, visionReady=false;
+  let lastVideoTime=-1, prevHandCenter=null, prevHandTime=0;
+  let lastTrackingRun=0;
+  const trackingIntervalMs=66; // ~15 fps tracking, render remains 60 fps
+  const metricSmooth={personDistance:null,personX:null,personY:null,headDistance:null,headX:null,headY:null,handX:null,handY:null,pinch:null,openness:null,handTilt:null,handMotion:null};
+
+  let audioCtx=null, analyser=null, micData=null, micStream=null, bgSourceNode=null, bgFilter=null, bgGain=null, audioEngineReady=false, currentAudioUrl=null;
+  let loopFadeDuration=0.22;
+
+  const slots=Array.from({length:10}, (_,i)=>({id:i,imageBlob:null,imageName:'',audioBlob:null,audioName:'',settings:null}));
+  let currentSlot=0;
+  let uiHidden=false;
+  let urlsToRevoke=[];
+
+  const clock=new THREE.Clock();
+
+  function smoothMetric(key, value, amount=0.78){
+    if(value==null || !Number.isFinite(value)) return null;
+    const prev=metricSmooth[key];
+    const next=(prev==null) ? value : prev*amount + value*(1-amount);
+    metricSmooth[key]=next;
+    return next;
+  }
+
+  function needsHandTracking(){
+    return ['pinch','handX','handY','openness','handTilt','handMotion'].includes(inputMode.value);
+  }
+
+  function needsSubjectTracking(){
+    return ['headDistance','headX','headY'].includes(inputMode.value);
+  }
+
+  function getTrackingMetric(name){
+    const t = trackingTarget ? trackingTarget.value : 'person';
+    if(t==='person'){
+      if(name==='distance') return metrics.personDistance;
+      if(name==='x') return metrics.personX;
+      if(name==='y') return metrics.personY;
+    }
+    if(name==='distance') return metrics.headDistance;
+    if(name==='x') return metrics.headX;
+    if(name==='y') return metrics.headY;
+    return null;
+  }
+
+  const valueMap={
+    manualVal:()=>el.manual.value,
+    smoothVal:()=>el.smooth.value,
+    rangeStartVal:()=>el.rangeStart.value,
+    rangeEndVal:()=>el.rangeEnd.value,
+    distanceGainVal:()=>el.distanceGain.value,
+    distanceCurveVal:()=>el.distanceCurve.value,
+    distanceDeadzoneVal:()=>el.distanceDeadzone.value,
+    audioOutVal:()=>el.audioOut.value,
+    audioReactVal:()=>el.audioReact.value,
+    densityVal:()=>el.density.value+'²',
+    traceAmountVal:()=>el.traceAmount.value,
+    sizeVal:()=>el.pointSize.value,
+    depthVal:()=>el.depth.value,
+    thresholdVal:()=>el.threshold.value,
+    spreadVal:()=>el.spread.value,
+    noiseVal:()=>el.noise.value,
+    zSpreadVal:()=>el.zSpread.value,
+    fadeVal:()=>el.fade.value,
+    turbulenceVal:()=>el.turbulence.value,
+    erosionVal:()=>el.erosion.value,
+    bloomStrengthVal:()=>el.bloomStrength.value,
+    bloomRadiusVal:()=>el.bloomRadius.value,
+    bloomThresholdVal:()=>el.bloomThreshold.value,
+    rgbShiftVal:()=>el.rgbShift.value,
+    gloomVal:()=>el.gloom.value,
+    perspectiveVal:()=>el.perspective.value+'°',
+    scaleVal:()=>el.scale.value+'×',
+    parallaxVal:()=>el.parallax.value,
+    orbitSpeedVal:()=>el.orbitSpeed.value,
+    orbitXVal:()=>el.orbitX.value,
+    orbitYVal:()=>el.orbitY.value
+  };
+
+  function refreshVals(){
+    for(const [id,fn] of Object.entries(valueMap)){
+      const node=$(id); if(node) node.textContent=fn();
+    }
+    inputReadout.textContent=inputMode.value;
+  }
+
+  function serializeCurrentControls(){
+    const settings={};
+    [...sliderIds,'inputMode','trackingTarget'].forEach(id=>settings[id]=$(id).value);
+    ['grayscale','invert','autoOrbit','targetOrbit','postEnabled'].forEach(id=>settings[id]=$(id).checked);
+    return settings;
+  }
+
+  function applyControlSettings(settings){
+    if(!settings) return;
+    [...sliderIds,'inputMode','trackingTarget'].forEach(id=>{ if(settings[id]!==undefined) $(id).value=settings[id]; });
+    ['grayscale','invert','autoOrbit','targetOrbit','postEnabled'].forEach(id=>{ if(settings[id]!==undefined) $(id).checked=!!settings[id]; });
+    refreshVals();
+  }
+
+  function captureCurrentSlotSettings(){
+    if(!slots[currentSlot]) return;
+    slots[currentSlot].settings = serializeCurrentControls();
+  }
+
+  function updateCameraPreviewStatus(){
+    cameraWrap.classList.toggle('detected', !!targetDetected);
+    cameraWrap.classList.toggle('missing', !targetDetected);
+
+    let strokeWidth = 2;
+    const currentDistance = getTrackingMetric('distance');
+    if(targetDetected && currentDistance != null && homeHeadDistance != null && homeHeadDistance > 0){
+      const ratio = currentDistance / homeHeadDistance;
+      const normalized = Math.max(0, Math.min(1, (ratio - 0.55) / 1.25));
+      strokeWidth = 2 + normalized * 8;
+    }
+    cameraWrap.style.borderWidth = strokeWidth.toFixed(2) + 'px';
+  }
+
+  function updateSlotList(){
+    slotList.innerHTML='';
+    slots.forEach((slot,i)=>{
+      const row=document.createElement('div');
+      row.className='slotRow'+(i===currentSlot?' active':'');
+      const imgName=slot.imageName || 'No image';
+      const audName=slot.audioName || 'No audio';
+      row.innerHTML='<strong>'+(i+1)+'</strong><div class="slotNames"><span>IMG: '+escapeHtml(imgName)+'</span><span>AUD: '+escapeHtml(audName)+'</span></div>';
+      row.addEventListener('click',()=>activateSlot(i));
+      slotList.appendChild(row);
+    });
+    slotReadout.textContent=String(currentSlot+1);
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function showExperience(){
+    drop.style.opacity='0';
+    setTimeout(()=>drop.style.display='none',250);
+    if(!uiHidden){
+      if(panel.classList.contains('hidden')) panelToggle.style.display='block';
+      else panel.classList.remove('hidden');
+      hint.style.opacity='1';
+      setTimeout(()=>hint.style.opacity='.24',6000);
+    }
+  }
+
+  document.querySelectorAll('#panel input[type=range]').forEach(node=>{
+    node.addEventListener('input',()=>{
+      refreshVals();
+      captureCurrentSlotSettings();
+      if(['density','depth','threshold'].includes(node.id) && sourceImage) rebuild(sourceImage);
+    });
+  });
+  document.querySelectorAll('#panel input[type=checkbox], #panel select').forEach(node=>{
+    node.addEventListener('change',()=>{
+      captureCurrentSlotSettings();
+    });
+  });
+  grayscale.addEventListener('change',()=>{captureCurrentSlotSettings(); sourceImage&&rebuild(sourceImage);});
+  inputMode.addEventListener('change',()=>{ homeHeadDistance=null; refreshVals(); captureCurrentSlotSettings(); });
+  trackingTarget.addEventListener('change',()=>{ homeHeadDistance=null; trackStatus.textContent='Tracking method changed, recalibrate home'; captureCurrentSlotSettings(); });
+
+  async function fileToImage(file){
+    const url=URL.createObjectURL(file);
+    urlsToRevoke.push(url);
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=url;});
+    return img;
+  }
+
+  function rebuild(img){
+    sourceImage=img;
+    const density=+el.density.value;
+    const maxDim=880;
+    let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+    const s=Math.min(1,maxDim/Math.max(w,h));
+    w=Math.max(2,Math.round(w*s)); h=Math.max(2,Math.round(h*s));
+
+    const c=document.createElement('canvas');
+    c.width=w; c.height=h;
+    const ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(img,0,0,w,h);
+    const data=ctx.getImageData(0,0,w,h).data;
+
+    const cols=density;
+    const rows=Math.max(2,Math.round(density*h/w));
+    const pos=[], colors=[], dirs=[], phases=[], edges=[];
+    const aspect=w/h, worldH=4.7, worldW=worldH*aspect;
+    const threshold=+el.threshold.value;
+
+    for(let yy=0; yy<rows; yy++){
+      for(let xx=0; xx<cols; xx++){
+        const px=Math.min(w-1,Math.floor(xx/(cols-1)*(w-1)));
+        const py=Math.min(h-1,Math.floor(yy/(rows-1)*(h-1)));
+        const i=(py*w+px)*4;
+        const r=data[i]/255, g=data[i+1]/255, b=data[i+2]/255, a=data[i+3]/255;
+        const lum=.2126*r+.7152*g+.0722*b;
+        if(a<.04 || lum<threshold) continue;
+
+        const x=(xx/(cols-1)-.5)*worldW;
+        const y=-(yy/(rows-1)-.5)*worldH;
+        const z=(lum-.5)*+el.depth.value;
+        pos.push(x,y,z);
+        if(grayscale.checked) colors.push(lum,lum,lum); else colors.push(r,g,b);
+
+        let dx=Math.random()*2-1, dy=Math.random()*2-1, dz=Math.random()*2-1;
+        const mag=Math.hypot(dx,dy,dz)||1;
+        dirs.push(dx/mag,dy/mag,dz/mag);
+        phases.push(Math.random()*Math.PI*2);
+
+        const nx=Math.abs(xx/(cols-1)-.5)*2, ny=Math.abs(yy/(rows-1)-.5)*2;
+        edges.push(Math.max(nx,ny));
+      }
+    }
+
+    const count=pos.length/3 || 1;
+    let cx=0, cy=0, cz=0;
+    for(let i=0;i<pos.length;i+=3){cx+=pos[i]; cy+=pos[i+1]; cz+=pos[i+2];}
+    cx/=count; cy/=count; cz/=count;
+    for(let i=0;i<pos.length;i+=3){pos[i]-=cx; pos[i+1]-=cy; pos[i+2]-=cz;}
+
+    geometry?.dispose();
+    material?.dispose();
+    traceGeometry?.dispose();
+    traceMaterial?.dispose();
+    if(points) root.remove(points);
+    if(tracePoints) root.remove(tracePoints);
+
+    basePositions=new Float32Array(pos);
+    baseColors=new Float32Array(colors);
+    randomDirs=new Float32Array(dirs);
+    randomPhase=new Float32Array(phases);
+    edgeFactor=new Float32Array(edges);
+
+    function makePointMaterial(alphaScale=1){
+      return new THREE.ShaderMaterial({
+        transparent:true, depthWrite:false, vertexColors:true,
+        uniforms:{pointSize:{value:+el.pointSize.value},pixelRatio:{value:Math.min(devicePixelRatio,2)},alphaScale:{value:alphaScale}},
+        vertexShader:`
+          uniform float pointSize; uniform float pixelRatio;
+          attribute float alpha; varying vec3 vColor; varying float vAlpha;
+          void main(){
+            vColor=color; vAlpha=alpha;
+            vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=pointSize*pixelRatio*(7.6/max(.7,-mv.z));
+            gl_Position=projectionMatrix*mv;
+          }
+        `,
+        fragmentShader:`
+          uniform float alphaScale;
+          varying vec3 vColor; varying float vAlpha;
+          void main(){
+            vec2 p=gl_PointCoord-.5;
+            float d=length(p);
+            if(d>.5) discard;
+            float soft=1.0-smoothstep(.28,.5,d);
+            gl_FragColor=vec4(vColor,vAlpha*alphaScale*soft);
+          }
+        `
+      });
+    }
+
+    geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.BufferAttribute(basePositions.slice(),3));
+    geometry.setAttribute('color',new THREE.BufferAttribute(baseColors.slice(),3));
+    geometry.setAttribute('alpha',new THREE.BufferAttribute(new Float32Array(count).fill(1),1));
+    material=makePointMaterial(1);
+    points=new THREE.Points(geometry,material);
+    root.add(points);
+
+    tracePositions=basePositions.slice();
+    traceAlphas=new Float32Array(count).fill(0);
+    traceGeometry=new THREE.BufferGeometry();
+    traceGeometry.setAttribute('position',new THREE.BufferAttribute(tracePositions,3));
+    traceGeometry.setAttribute('color',new THREE.BufferAttribute(baseColors.slice(),3));
+    traceGeometry.setAttribute('alpha',new THREE.BufferAttribute(traceAlphas,1));
+    traceMaterial=makePointMaterial(0.95);
+    tracePoints=new THREE.Points(traceGeometry,traceMaterial);
+    root.add(tracePoints);
+  }
+
+  async function ensureAudioEngine(){
+    if(!audioCtx){
+      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    }
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+
+    if(!audioEngineReady){
+      bgSourceNode=audioCtx.createMediaElementSource(bgAudio);
+      bgFilter=audioCtx.createBiquadFilter();
+      bgGain=audioCtx.createGain();
+      bgFilter.type='lowpass';
+      bgFilter.frequency.value=1200;
+      bgGain.gain.value=0.7;
+      bgSourceNode.connect(bgFilter);
+      bgFilter.connect(bgGain);
+      bgGain.connect(audioCtx.destination);
+      audioEngineReady=true;
+    }
+  }
+
+  async function enableMic(){
+    try{
+      await ensureAudioEngine();
+      micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+      const src=audioCtx.createMediaStreamSource(micStream);
+      analyser=audioCtx.createAnalyser();
+      analyser.fftSize=1024;
+      micData=new Float32Array(analyser.fftSize);
+      src.connect(analyser);
+      $('micBtn').textContent='Mic enabled';
+      trackStatus.textContent='Mic live';
+    }catch(err){
+      console.error(err);
+      trackStatus.textContent='Mic unavailable';
+      alert('Could not start microphone.');
+    }
+  }
+
+  function readMicLevel(){
+    if(!analyser || !micData) return 0;
+    analyser.getFloatTimeDomainData(micData);
+    let sum=0;
+    for(let i=0;i<micData.length;i++) sum += micData[i]*micData[i];
+    const rms=Math.sqrt(sum/micData.length);
+    return rms*260;
+  }
+
+  function wait(ms){ return new Promise(res=>setTimeout(res, ms)); }
+
+  async function setCurrentAudioBlob(blob){
+    await ensureAudioEngine();
+    if(audioEngineReady){
+      bgGain.gain.cancelScheduledValues(audioCtx.currentTime);
+      bgGain.gain.setValueAtTime(bgGain.gain.value, audioCtx.currentTime);
+      bgGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime+0.18);
+      await wait(190);
+    }
+    if(!blob){
+      bgAudio.pause();
+      bgAudio.removeAttribute('src');
+      bgAudio.load();
+      return;
+    }
+    if(currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl=URL.createObjectURL(blob);
+    bgAudio.src=currentAudioUrl;
+    bgAudio.loop=true;
+    bgAudio.currentTime=0;
+    try{ await bgAudio.play(); }catch(e){}
+  }
+
+  async function activateSlot(index){
+    if(index<0 || index>9) return;
+    captureCurrentSlotSettings();
+    currentSlot=index;
+    const slot=slots[index];
+    if(slot.settings) applyControlSettings(slot.settings);
+    if(slot.imageBlob){
+      const img=await fileToImage(slot.imageBlob);
+      rebuild(img);
+      showExperience();
+    }
+    if(slot.audioBlob){
+      await setCurrentAudioBlob(slot.audioBlob);
+    }else{
+      await setCurrentAudioBlob(null);
+    }
+    updateSlotList();
+  }
+
+  async function assignFileToCurrentSlot(file, type){
+    if(!file) return;
+    const slot=slots[currentSlot];
+    if(type==='image'){
+      slot.imageBlob=file;
+      slot.imageName=file.name;
+    }else{
+      slot.audioBlob=file;
+      slot.audioName=file.name;
+    }
+    if(!slot.settings) slot.settings = serializeCurrentControls();
+    else slot.settings = serializeCurrentControls();
+    updateSlotList();
+    await activateSlot(currentSlot);
+    showExperience();
+  }
+
+  $('imageInput').addEventListener('change',e=>assignFileToCurrentSlot(e.target.files[0],'image'));
+  $('audioFileInput').addEventListener('change',e=>assignFileToCurrentSlot(e.target.files[0],'audio'));
+  $('replaceImagesInput').addEventListener('change',e=>assignFileToCurrentSlot(e.target.files[0],'image'));
+  $('replaceAudioInput').addEventListener('change',e=>assignFileToCurrentSlot(e.target.files[0],'audio'));
+
+  $('demoBtn').addEventListener('click',async()=>{
+    const c=document.createElement('canvas');
+    c.width=900;c.height=600;
+    const x=c.getContext('2d');
+    const g=x.createLinearGradient(0,0,900,600);
+    g.addColorStop(0,'#c8c2b3'); g.addColorStop(.55,'#7b7468'); g.addColorStop(1,'#252525');
+    x.fillStyle=g; x.fillRect(0,0,900,600);
+    x.fillStyle='#161616'; x.fillRect(0,360,900,240);
+    x.fillStyle='#47433d'; x.fillRect(80,180,210,180); x.fillRect(610,130,190,230);
+    x.fillStyle='#b1a58f'; x.fillRect(115,215,58,84); x.fillRect(200,215,58,84); x.fillRect(645,170,50,80); x.fillRect(716,170,50,80);
+    x.fillStyle='#6f6a60'; x.beginPath(); x.moveTo(0,390); x.lineTo(450,240); x.lineTo(900,390); x.lineTo(900,600); x.lineTo(0,600); x.fill();
+    x.fillStyle='#1b1b1b'; x.beginPath(); x.arc(460,350,75,0,Math.PI*2); x.fill();
+    const blob=await new Promise(res=>c.toBlob(res,'image/png'));
+    slots[0].imageBlob=blob;
+    slots[0].imageName='Demo image';
+    updateSlotList();
+    activateSlot(0);
+  });
+
+  async function initVision(){
+    if(visionReady) return;
+    trackStatus.textContent='Loading tracking models…';
+    const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    faceLandmarker=await FaceLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'},
+      runningMode:'VIDEO', numFaces:1
+    });
+    handLandmarker=await HandLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task'},
+      runningMode:'VIDEO', numHands:1
+    });
+    poseLandmarker=await PoseLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'},
+      runningMode:'VIDEO', numPoses:1
+    });
+    visionReady=true;
+    trackStatus.textContent='Tracking models ready';
+  }
+
+  async function enableTracking(){
+    try{
+      await initVision();
+      trackingStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960},height:{ideal:720}},audio:false});
+      video.srcObject=trackingStream;
+      await video.play();
+      cameraWrap.style.display=uiHidden?'none':'block';
+      updateCameraPreviewStatus();
+      statusDot.classList.add('on');
+      trackStatus.textContent='Tracking live';
+      $('trackingBtn').textContent='Tracking enabled';
+      inputMode.value='headDistance';
+      refreshVals();
+    }catch(err){
+      console.error(err);
+      trackStatus.textContent='Tracking unavailable';
+      alert('Could not start tracking. Open this file from localhost or a local web server, then allow camera access.');
+    }
+  }
+
+  $('trackingBtn').addEventListener('click',enableTracking);
+  $('micBtn').addEventListener('click',enableMic);
+
+  $('calibrateBtn').addEventListener('click',()=>{
+    const currentDistance = getTrackingMetric('distance');
+    if(currentDistance!=null){
+      homeHeadDistance=currentDistance;
+      trackStatus.textContent='Home distance calibrated';
+    }else{
+      trackStatus.textContent='No head detected yet';
+    }
+  });
+  $('resetBtn').addEventListener('click',()=>{
+    memoryLoss=0; combinedTarget=0; primaryMapped=0; micMapped=0;
+    controls.reset(); controls.target.set(0,0,0);
+    const currentDistance = getTrackingMetric('distance');
+    if(currentDistance!=null) homeHeadDistance=currentDistance;
+    trackStatus.textContent='Live state reset';
+  });
+  $('captureStartBtn').addEventListener('click',()=>{ el.rangeStart.value=primaryRaw.toFixed(3); refreshVals(); trackStatus.textContent='Range start captured'; });
+  $('captureEndBtn').addEventListener('click',()=>{ el.rangeEnd.value=primaryRaw.toFixed(3); refreshVals(); trackStatus.textContent='Range end captured'; });
+
+  $('hidePanel').addEventListener('click',()=>{panel.classList.add('hidden'); panelToggle.style.display=uiHidden?'none':'block';});
+  panelToggle.addEventListener('click',()=>{panel.classList.remove('hidden'); panelToggle.style.display='none';});
+
+  document.addEventListener('keydown',async(e)=>{
+    if(e.key>='1' && e.key<='9'){
+      await activateSlot(parseInt(e.key,10)-1);
+    }
+    if(e.key==='0'){
+      await activateSlot(9);
+    }
+    if(e.key==='*' || e.code==='NumpadMultiply'){
+      toggleUI();
+    }
+    if(e.key==='f' || e.key==='F'){
+      toggleFullscreen();
+    }
+  });
+
+  function toggleUI(){
+    uiHidden=!uiHidden;
+    const show=!uiHidden;
+    if(show){
+      if(trackingStream) cameraWrap.style.display='block';
+      $('leftActions').classList.remove('hidden-ui');
+      $('hud').classList.remove('hidden-ui');
+      hint.classList.remove('hidden-ui');
+      if(panel.classList.contains('hidden')) panelToggle.style.display='block';
+      else panel.classList.remove('hidden');
+    }else{
+      panel.classList.add('hidden');
+      panelToggle.style.display='none';
+      cameraWrap.style.display='none';
+      $('leftActions').classList.add('hidden-ui');
+      $('hud').classList.add('hidden-ui');
+      hint.classList.add('hidden-ui');
+    }
+  }
+
+  async function toggleFullscreen(){
+    if(!document.fullscreenElement){
+      try{ await document.documentElement.requestFullscreen(); }catch(e){}
+    }else{
+      try{ await document.exitFullscreen(); }catch(e){}
+    }
+  }
+
+  document.querySelectorAll('[data-preset]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const p=btn.dataset.preset;
+      const set=obj=>{for(const [k,v] of Object.entries(obj)) $(k).value=v; refreshVals();};
+      if(p==='gentle') set({spread:2.4,noise:0.9,zSpread:1.4,fade:0.16,turbulence:0.12,erosion:0.12,bloomStrength:0.75,rgbShift:0.0012,gloom:0.18});
+      if(p==='shatter') set({spread:7.0,noise:3.0,zSpread:4.8,fade:0.52,turbulence:0.38,erosion:0.36,bloomStrength:1.3,rgbShift:0.0032,gloom:0.30});
+      if(p==='constellation') set({spread:4.4,noise:2.2,zSpread:2.8,fade:0.60,turbulence:0.08,erosion:0.28,bloomStrength:1.55,rgbShift:0.0020,gloom:0.24});
+      if(p==='tide') set({spread:2.8,noise:1.2,zSpread:1.8,fade:0.22,turbulence:0.48,erosion:0.16,bloomStrength:1.05,rgbShift:0.0016,gloom:0.28});
+      trackStatus.textContent='Preset applied';
+    });
+  });
+
+  function clamp(v,min=0,max=1){return Math.min(max,Math.max(min,v));}
+  function dist2(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+  function avg(arr){return arr.reduce((s,v)=>s+v,0)/Math.max(1,arr.length);}
+
+  function updateTracking(ts){
+    if(!visionReady || !trackingStream || !video.videoWidth) return;
+    if(ts-lastTrackingRun < trackingIntervalMs) return;
+    if(video.currentTime===lastVideoTime) return;
+    lastTrackingRun=ts;
+    lastVideoTime=video.currentTime;
+
+    try{
+      const needSubject=needsSubjectTracking();
+      const needHand=needsHandTracking();
+      detectedTargetCount=0;
+      targetDetected=false;
+
+      if(needSubject && trackingTarget.value==='head'){
+        const face=faceLandmarker.detectForVideo(video,ts);
+        detectedTargetCount=face.faceLandmarks ? face.faceLandmarks.length : 0;
+        if(face.faceLandmarks && face.faceLandmarks.length){
+          const lm=face.faceLandmarks[0];
+          let minX=1,minY=1,maxX=0,maxY=0;
+          for(const p of lm){
+            if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y;
+            if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y;
+          }
+          const w=maxX-minX, h=maxY-minY;
+          metrics.headDistance=smoothMetric('headDistance',Math.sqrt(Math.max(.0001,w*h)),.84);
+          metrics.headX=smoothMetric('headX',(minX+maxX)/2,.82);
+          metrics.headY=smoothMetric('headY',(minY+maxY)/2,.82);
+          if(homeHeadDistance==null) homeHeadDistance=metrics.headDistance;
+          targetDetected=true;
+        }else{
+          metrics.headDistance=null; metrics.headX=null; metrics.headY=null;
+        }
+      }
+
+      if(needSubject && trackingTarget.value==='person'){
+        const pose=poseLandmarker.detectForVideo(video,ts);
+        detectedTargetCount=pose.landmarks ? pose.landmarks.length : 0;
+        if(pose.landmarks && pose.landmarks.length){
+          const lm=pose.landmarks[0];
+          const nose=lm[0], ls=lm[11], rs=lm[12], lh=lm[23], rh=lm[24];
+          const shouldersVisible=ls && rs && (ls.visibility==null || ls.visibility>.22) && (rs.visibility==null || rs.visibility>.22);
+          const hipsVisible=lh && rh && (lh.visibility==null || lh.visibility>.18) && (rh.visibility==null || rh.visibility>.18);
+          const noseVisible=nose && (nose.visibility==null || nose.visibility>.22);
+          if(shouldersVisible){
+            const shoulderCenter={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
+            const shoulderWidth=Math.hypot(ls.x-rs.x,ls.y-rs.y);
+            let centerX=shoulderCenter.x;
+            let centerY=shoulderCenter.y;
+            let personScale=shoulderWidth;
+            if(hipsVisible){
+              const hipCenter={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
+              const hipWidth=Math.hypot(lh.x-rh.x,lh.y-rh.y);
+              const torsoHeight=Math.hypot(shoulderCenter.x-hipCenter.x,shoulderCenter.y-hipCenter.y);
+              personScale=Math.sqrt(Math.max(.0001, ((shoulderWidth+hipWidth)*.5) * torsoHeight));
+              centerX=(shoulderCenter.x+hipCenter.x)/2;
+              centerY=(shoulderCenter.y+hipCenter.y)/2;
+            }else if(noseVisible){
+              centerY=(shoulderCenter.y+nose.y)/2;
+              personScale=Math.max(shoulderWidth, Math.hypot(shoulderCenter.x-nose.x,shoulderCenter.y-nose.y)*1.35);
+            }
+            metrics.personDistance=smoothMetric('personDistance',personScale,.88);
+            metrics.personX=smoothMetric('personX',centerX,.84);
+            metrics.personY=smoothMetric('personY',centerY,.84);
+            if(homeHeadDistance==null) homeHeadDistance=metrics.personDistance;
+            targetDetected=true;
+          }else{
+            metrics.personDistance=null; metrics.personX=null; metrics.personY=null;
+          }
+        }else{
+          metrics.personDistance=null; metrics.personX=null; metrics.personY=null;
+        }
+      }
+
+      if(!needSubject && trackingTarget.value==='head'){
+        const face=faceLandmarker.detectForVideo(video,ts);
+        detectedTargetCount=face.faceLandmarks ? face.faceLandmarks.length : 0;
+        targetDetected=detectedTargetCount>0;
+        if(targetDetected){
+          const lm=face.faceLandmarks[0];
+          let minX=1,minY=1,maxX=0,maxY=0;
+          for(const p of lm){
+            if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y;
+            if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y;
+          }
+          metrics.headX=smoothMetric('headX',(minX+maxX)/2,.82);
+          metrics.headY=smoothMetric('headY',(minY+maxY)/2,.82);
+          metrics.headDistance=smoothMetric('headDistance',Math.sqrt(Math.max(.0001,(maxX-minX)*(maxY-minY))),.84);
+        }
+      }
+
+      if(!needSubject && trackingTarget.value==='person'){
+        const pose=poseLandmarker.detectForVideo(video,ts);
+        detectedTargetCount=pose.landmarks ? pose.landmarks.length : 0;
+        targetDetected=detectedTargetCount>0;
+        if(targetDetected){
+          const lm=pose.landmarks[0];
+          const ls=lm[11], rs=lm[12], lh=lm[23], rh=lm[24];
+          const shouldersVisible=ls && rs && (ls.visibility==null || ls.visibility>.22) && (rs.visibility==null || rs.visibility>.22);
+          const hipsVisible=lh && rh && (lh.visibility==null || lh.visibility>.18) && (rh.visibility==null || rh.visibility>.18);
+          if(shouldersVisible){
+            const shoulderCenter={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
+            let cx=shoulderCenter.x, cy=shoulderCenter.y;
+            let personScale=Math.hypot(ls.x-rs.x,ls.y-rs.y);
+            if(hipsVisible){
+              const hipCenter={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
+              const hipWidth=Math.hypot(lh.x-rh.x,lh.y-rh.y);
+              const torsoHeight=Math.hypot(shoulderCenter.x-hipCenter.x,shoulderCenter.y-hipCenter.y);
+              personScale=Math.sqrt(Math.max(.0001, ((personScale+hipWidth)*.5)*torsoHeight));
+              cx=(shoulderCenter.x+hipCenter.x)/2;
+              cy=(shoulderCenter.y+hipCenter.y)/2;
+            }
+            metrics.personX=smoothMetric('personX',cx,.84);
+            metrics.personY=smoothMetric('personY',cy,.84);
+            metrics.personDistance=smoothMetric('personDistance',personScale,.88);
+          }
+        }
+      }
+
+      if(needHand){
+        const hand=handLandmarker.detectForVideo(video,ts);
+        if(hand.landmarks && hand.landmarks.length){
+          const lm=hand.landmarks[0];
+          const wrist=lm[0], thumb=lm[4], index=lm[8], middleMcp=lm[9];
+          const palmScale=Math.max(.02,dist2(wrist,middleMcp));
+          const cx=avg(lm.map(p=>p.x)), cy=avg(lm.map(p=>p.y));
+          const opennessRaw=avg([8,12,16,20].map(i=>dist2(wrist,lm[i])/palmScale));
+          const pinchRaw=dist2(thumb,index)/palmScale;
+          const vx=middleMcp.x-wrist.x, vy=middleMcp.y-wrist.y;
+          const angle=Math.atan2(vx,-vy);
+
+          metrics.handX=smoothMetric('handX',cx,.78);
+          metrics.handY=smoothMetric('handY',cy,.78);
+          metrics.pinch=smoothMetric('pinch',clamp((pinchRaw-.18)/1.25),.76);
+          metrics.openness=smoothMetric('openness',clamp((opennessRaw-1.0)/1.55),.80);
+          metrics.handTilt=smoothMetric('handTilt',(angle/Math.PI),.82);
+
+          if(prevHandCenter){
+            const dt=Math.max(.033,(ts-prevHandTime)/1000);
+            const speed=Math.hypot(cx-prevHandCenter.x,cy-prevHandCenter.y)/dt;
+            metrics.handMotion=smoothMetric('handMotion',speed,.84);
+          }else metrics.handMotion=0;
+
+          prevHandCenter={x:cx,y:cy};
+          prevHandTime=ts;
+        }else{
+          metrics.handX=null; metrics.handY=null; metrics.pinch=null;
+          metrics.openness=null; metrics.handTilt=null; metrics.handMotion=null;
+          prevHandCenter=null;
+        }
+      }
+
+      updateCameraPreviewStatus();
+      trackStatus.textContent='Tracking live';
+    }catch(err){
+      console.error(err);
+    }
+  }
+
+  function getPrimaryRaw(t){
+    switch(inputMode.value){
+      case 'manual': return +el.manual.value;
+      case 'mouseX': return (mouseX-0.5)*20;
+      case 'mouseY': return (0.5-mouseY)*20;
+      case 'auto': return Math.sin(t*0.42)*5;
+      case 'headDistance':{
+        const d=getTrackingMetric('distance');
+        if(d!=null && homeHeadDistance!=null && d > 0 && homeHeadDistance > 0){
+          const sensitivity=+el.distanceGain.value;
+          const curve=+el.distanceCurve.value;
+          const deadzone=+el.distanceDeadzone.value;
+          const signed=Math.log(homeHeadDistance / d);
+          const mag=Math.max(0, Math.abs(signed) - deadzone);
+          const shaped=Math.pow(mag, curve);
+          return Math.sign(signed) * shaped * sensitivity;
+        }
+        return +el.manual.value;
+      }
+      case 'headX':{ const x=getTrackingMetric('x'); return x!=null ? (x-0.5)*20 : +el.manual.value; }
+      case 'headY':{ const y=getTrackingMetric('y'); return y!=null ? (0.5-y)*20 : +el.manual.value; }
+      case 'pinch': return metrics.pinch!=null ? metrics.pinch : +el.manual.value;
+      case 'handX': return metrics.handX!=null ? (metrics.handX-0.5)*20 : +el.manual.value;
+      case 'handY': return metrics.handY!=null ? (0.5-metrics.handY)*20 : +el.manual.value;
+      case 'openness': return metrics.openness!=null ? metrics.openness : +el.manual.value;
+      case 'handTilt': return metrics.handTilt!=null ? metrics.handTilt : +el.manual.value;
+      case 'handMotion': return metrics.handMotion!=null ? metrics.handMotion : +el.manual.value;
+      default: return +el.manual.value;
+    }
+  }
+
+  function mapRange(v,start,end,invertFlag=false){
+    let a=+start, b=+end;
+    if(Math.abs(b-a)<1e-6) b=a+1e-6;
+    let m=(v-a)/(b-a);
+    m=clamp(m);
+    if(invertFlag) m=1-m;
+    return m;
+  }
+
+  function updateAudioPlayback(){
+    if(!audioEngineReady || !bgFilter || !bgGain) return;
+    const out=+el.audioOut.value;
+    const react=+el.audioReact.value;
+    let loopEnvelope=1;
+    if(bgAudio.src && Number.isFinite(bgAudio.duration) && bgAudio.duration>0){
+      const fade=loopFadeDuration;
+      const fadeIn=Math.min(1, bgAudio.currentTime / fade);
+      const fadeOut=Math.min(1, Math.max(0, bgAudio.duration - bgAudio.currentTime) / fade);
+      loopEnvelope=Math.min(fadeIn, fadeOut);
+    }
+    const gainTarget=(bgAudio.src ? out * Math.max(0.04, 1 - combinedTarget*0.88) * loopEnvelope : 0);
+    bgGain.gain.linearRampToValueAtTime(gainTarget, audioCtx.currentTime+0.08);
+    const filterTarget=Math.max(260, 18000 - combinedTarget*14500);
+    bgFilter.frequency.linearRampToValueAtTime(filterTarget, audioCtx.currentTime+0.08);
+  }
+
+  function updatePostEffects(){
+    if(!postEnabled.checked) return;
+    bloomPass.strength=+el.bloomStrength.value + memoryLoss*0.45 + micMapped*0.25;
+    bloomPass.radius=+el.bloomRadius.value;
+    bloomPass.threshold=+el.bloomThreshold.value;
+    rgbPass.uniforms['amount'].value=+el.rgbShift.value + memoryLoss*0.0012 + micMapped*0.0006;
+    gloomPass.uniforms['amount'].value=+el.gloom.value + memoryLoss*0.12;
+  }
+
+  function updateCloud(t){
+    if(!points || !geometry) return;
+    controls.target.set(0,0,0);
+
+    material.uniforms.pointSize.value=+el.pointSize.value;
+    if(traceMaterial) traceMaterial.uniforms.pointSize.value=Math.max(0.2, +el.pointSize.value*0.95);
+    camera3d.fov=+el.perspective.value;
+    camera3d.updateProjectionMatrix();
+    root.scale.setScalar(+el.scale.value);
+
+    const p=geometry.attributes.position.array;
+    const a=geometry.attributes.alpha.array;
+    const spread=+el.spread.value, noise=+el.noise.value, zs=+el.zSpread.value;
+    const turb=+el.turbulence.value, fade=+el.fade.value, erosion=+el.erosion.value;
+    const loss=memoryLoss, l2=loss*loss;
+    const n=p.length/3;
+
+    for(let i=0;i<n;i++){
+      const j=i*3, ph=randomPhase[i];
+      const bx=basePositions[j], by=basePositions[j+1], bz=basePositions[j+2];
+      const radial=Math.hypot(bx,by)+.001;
+      const rx=bx/radial, ry=by/radial;
+      const swirl=Math.sin(t*(.5+turb*1.8)+ph)*turb*loss;
+
+      p[j]=bx + rx*spread*l2 + randomDirs[j]*noise*l2 + swirl*randomDirs[j];
+      p[j+1]=by + ry*spread*l2 + randomDirs[j+1]*noise*l2 + swirl*randomDirs[j+1];
+      p[j+2]=bz*(1-loss*.78) + randomDirs[j+2]*zs*l2 + Math.cos(t*.72+ph)*turb*loss;
+
+      const vanish=Math.max(0,loss-(1-fade));
+      const edgeLoss=Math.max(0,(loss+edgeFactor[i]*erosion)-.76)*3.7;
+      const randomCull=((Math.sin(ph*91.73)+1)*.5)<vanish*2.0 ? 1:0;
+      a[i]=Math.max(0,.97-loss*.14-edgeLoss-randomCull);
+    }
+    geometry.attributes.position.needsUpdate=true;
+    geometry.attributes.alpha.needsUpdate=true;
+
+    if(tracePoints && traceGeometry){
+      const tp=traceGeometry.attributes.position.array;
+      const ta=traceGeometry.attributes.alpha.array;
+      const traceAmt=+el.traceAmount.value;
+      const alphaScale=traceAmt * (0.06 + memoryLoss*1.1);
+      for(let i=0;i<n;i++){
+        const j=i*3;
+        tp[j] = basePositions[j] + (p[j]-basePositions[j]) * 0.12;
+        tp[j+1] = basePositions[j+1] + (p[j+1]-basePositions[j+1]) * 0.12;
+        tp[j+2] = basePositions[j+2] + (p[j+2]-basePositions[j+2]) * 0.12;
+        ta[i] += (Math.max(0, alphaScale * (0.55 + (1-a[i])*0.75)) - ta[i]) * 0.10;
+      }
+      traceGeometry.attributes.position.needsUpdate=true;
+      traceGeometry.attributes.alpha.needsUpdate=true;
+    }
+
+    const par=+el.parallax.value;
+    const mouseRotX=-(mouseY-.5)*par*.11;
+    const mouseRotY=(mouseX-.5)*par*.15;
+
+    let targetX=mouseRotX, targetY=mouseRotY;
+    if(autoOrbit.checked){
+      const s=+el.orbitSpeed.value;
+      const ax=+el.orbitX.value;
+      const ay=+el.orbitY.value;
+      targetX += Math.sin(t*s*1.25)*ay + Math.sin(t*s*0.56)*ay*0.16;
+      targetY += Math.cos(t*s)*ax + Math.sin(t*s*0.82)*ax*0.18;
+    }
+
+    if(targetOrbit.checked && trackingStream){
+      const tx=getTrackingMetric('x');
+      const ty=getTrackingMetric('y');
+      if(targetDetected && tx!=null && ty!=null){
+        const desiredX=(0.5-ty)*0.24;
+        const desiredY=(tx-0.5)*0.34;
+        softTargetX += (desiredX-softTargetX)*0.045;
+        softTargetY += (desiredY-softTargetY)*0.045;
+      }else{
+        softTargetX *= 0.985;
+        softTargetY *= 0.985;
+      }
+      targetX += softTargetX;
+      targetY += softTargetY;
+    }else{
+      softTargetX *= 0.94;
+      softTargetY *= 0.94;
+    }
+
+    root.rotation.x += (targetX-root.rotation.x)*0.035;
+    root.rotation.y += (targetY-root.rotation.y)*0.035;
+    root.position.set(0,0,0);
+  }
+
+  window.addEventListener('pointermove',e=>{mouseX=e.clientX/innerWidth; mouseY=e.clientY/innerHeight;});
+  window.addEventListener('resize',()=>{
+    camera3d.aspect=innerWidth/innerHeight;
+    camera3d.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+    composer.setSize(innerWidth,innerHeight);
+  });
+
+  function openDB(){
+    return new Promise((resolve,reject)=>{
+      const req=indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded=()=>{
+        const db=req.result;
+        if(!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
+        if(!db.objectStoreNames.contains('slots')) db.createObjectStore('slots', {keyPath:'id'});
+      };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+  }
+
+  async function idbPut(storeName, keyOrValue, maybeValue){
+    const db=await openDB();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(storeName,'readwrite');
+      const store=tx.objectStore(storeName);
+      const req=(storeName==='slots') ? store.put(keyOrValue) : store.put(maybeValue, keyOrValue);
+      req.onsuccess=()=>resolve();
+      req.onerror=()=>reject(req.error);
+    });
+  }
+
+  async function idbGet(storeName, key){
+    const db=await openDB();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(storeName,'readonly');
+      const store=tx.objectStore(storeName);
+      const req=store.get(key);
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+  }
+
+  async function idbClear(storeName){
+    const db=await openDB();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(storeName,'readwrite');
+      const store=tx.objectStore(storeName);
+      const req=store.clear();
+      req.onsuccess=()=>resolve();
+      req.onerror=()=>reject(req.error);
+    });
+  }
+
+  async function saveSession(){
+    captureCurrentSlotSettings();
+    const settings=serializeCurrentControls();
+    settings.currentSlot=currentSlot;
+    await idbPut('settings', settingsKey, settings);
+    for(const slot of slots){
+      await idbPut('slots', {
+        id: slot.id,
+        imageBlob: slot.imageBlob || null,
+        imageName: slot.imageName || '',
+        audioBlob: slot.audioBlob || null,
+        audioName: slot.audioName || '',
+        settings: slot.settings || null
+      });
+    }
+    trackStatus.textContent='Saved with media sources and per-slot settings';
+  }
+
+  async function clearSession(){
+    await idbClear('settings');
+    await idbClear('slots');
+    trackStatus.textContent='Saved session cleared';
+  }
+
+  async function restoreSession(){
+    try{
+      const settings=await idbGet('settings', settingsKey);
+      if(settings){
+        applyControlSettings(settings);
+        if(settings.currentSlot!==undefined) currentSlot=Math.min(9, settings.currentSlot);
+        if(settings.density===undefined || +settings.density < 260) $('density').value='520';
+        refreshVals();
+      }
+      for(let i=0;i<10;i++){
+        const rec=await idbGet('slots', i);
+        if(rec){
+          slots[i].imageBlob=rec.imageBlob || null;
+          slots[i].imageName=rec.imageName || '';
+          slots[i].audioBlob=rec.audioBlob || null;
+          slots[i].audioName=rec.audioName || '';
+          slots[i].settings=rec.settings || null;
+        }
+      }
+      updateSlotList();
+      const slotToOpen = (slots[currentSlot].imageBlob || slots[currentSlot].audioBlob) ? currentSlot : slots.findIndex(s=>s.imageBlob||s.audioBlob);
+      if(slotToOpen>=0){
+        await activateSlot(slotToOpen);
+      }
+    }catch(err){
+      console.error('Restore failed', err);
+    }
+  }
+
+  $('saveDefaultsBtn').addEventListener('click',saveSession);
+  $('clearDefaultsBtn').addEventListener('click',clearSession);
+
+  refreshVals();
+  updateSlotList();
+  await restoreSession();
+  updateCameraPreviewStatus();
+
+  function animate(ts=0){
+    requestAnimationFrame(animate);
+    updateTracking(ts);
+
+    const dt=lastAnimateTime ? Math.min(0.1,(ts-lastAnimateTime)/1000) : 1/60;
+    lastAnimateTime=ts;
+    const t=clock.getElapsedTime();
+    primaryRaw=getPrimaryRaw(t);
+    primaryMapped=mapRange(primaryRaw, el.rangeStart.value, el.rangeEnd.value, invert.checked);
+
+    micRaw=readMicLevel();
+    micMapped=analyser ? mapRange(micRaw, el.rangeStart.value, el.rangeEnd.value, false) : 0;
+
+    if(trackingStream){
+      if(targetDetected) targetMissingProgress=Math.max(0,targetMissingProgress - dt/0.35);
+      else targetMissingProgress=Math.min(1,targetMissingProgress + dt/2.0);
+    }else{
+      targetMissingProgress=0;
+    }
+
+    combinedTarget=Math.max(clamp(primaryMapped), targetMissingProgress);
+    const smoothing=Math.max(0.72,+el.smooth.value);
+    memoryLoss=memoryLoss*smoothing + combinedTarget*(1-smoothing);
+
+    primaryReadout.textContent=primaryRaw.toFixed(3)+' → '+Math.round(primaryMapped*100)+'%';
+    audioReadout.textContent=micRaw.toFixed(3)+' → '+Math.round(micMapped*100)+'%';
+    lossReadout.textContent=Math.round(memoryLoss*100)+'%';
+    cameraOverlay.innerHTML='p '+primaryRaw.toFixed(3)+' → '+Math.round(primaryMapped*100)+'%<br>a '+micRaw.toFixed(3)+' → '+Math.round(micMapped*100)+'%<br>targets '+detectedTargetCount;
+
+    updateAudioPlayback();
+    updatePostEffects();
+    updateCloud(t);
+
+    controls.update();
+    if(postEnabled.checked) composer.render();
+    else renderer.render(scene,camera3d);
+  }
+  animate();
+
+  window.addEventListener('beforeunload',()=>{
+    urlsToRevoke.forEach(u=>URL.revokeObjectURL(u));
+    if(currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+  });
+})();
+</script>
+</body>
+</html>
